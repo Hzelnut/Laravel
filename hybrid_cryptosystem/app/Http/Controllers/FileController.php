@@ -14,6 +14,11 @@ class FileController extends Controller
         return view('encrypt');
     }
 
+    public function showDecryptForm()
+    {
+        return view('decrypt');
+    }
+
     public function encryptAES(Request $request)
     {
         $request->validate([
@@ -58,52 +63,6 @@ class FileController extends Controller
         return redirect()->back();
     }
 
-    public function showDecryptForm()
-    {
-        return view('decrypt');
-    }
-
-    public function decryptAES(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|file',
-            'password' => 'required|string|min:4',
-        ]);
-
-        $file = $request->file('file');
-        $password = $request->input('password');
-        $data = file_get_contents($file->getRealPath());
-
-        if (substr($data, 0, 3) !== 'AES') {
-            return back()->withErrors(['file' => 'Invalid file format.']);
-        }
-
-        $salt = substr($data, 3, 16);
-        $iv = substr($data, 19, 16);
-        $hmac = substr($data, -32);
-        $cipher = substr($data, 35, -32);
-
-        $key = hash_pbkdf2("sha256", $password, $salt, 100000, 32, true);
-        $calculatedHmac = hash_hmac('sha256', $salt . $iv . $cipher, $key, true);
-
-        if (!hash_equals($hmac, $calculatedHmac)) {
-            return back()->withErrors(['password' => 'Decryption failed: wrong password or tampered file.']);
-        }
-
-        $decrypted = openssl_decrypt($cipher, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
-        $outputName = 'decrypted_' . time() . '.txt';
-
-        $decryptedPath = storage_path('app/decrypted');
-        if (!file_exists($decryptedPath)) {
-            mkdir($decryptedPath, 0777, true);
-        }
-
-        Storage::put("decrypted/$outputName", $decrypted);
-
-        session()->flash('success', 'File decrypted successfully!');
-        return response()->download(storage_path("app/decrypted/$outputName"))->deleteFileAfterSend();
-    }
-
     public function encryptRSA(Request $request)
     {
         $request->validate([
@@ -128,22 +87,19 @@ class FileController extends Controller
             "private_key_bits" => 2048,
         ];
         $res = openssl_pkey_new($keyConfig);
-
-
-        $res = openssl_pkey_new($keyConfig);
         if (!$res) {
             $msg = "Failed to generate RSA key. OpenSSL error: " . implode(", ", array_filter([openssl_error_string()]));
             return back()->withErrors(['file' => $msg]);
         }
 
-        openssl_pkey_export($res, $privateKeyPEM, $password ?: null);
+        openssl_pkey_export($res, $privateKeyPEM, $password ?: '');
         $pubKeyDetails = openssl_pkey_get_details($res);
         $publicKeyPEM = $pubKeyDetails["key"];
 
         openssl_public_encrypt($data, $encryptedData, $publicKeyPEM, OPENSSL_PKCS1_OAEP_PADDING);
         $output = 'RSA' . $encryptedData;
 
-        $encFilename = pathinfo($filename, PATHINFO_FILENAME) . '_rsa.enc';
+        $encFilename = pathinfo($filename, PATHINFO_FILENAME) . '.enc';
         $keyFilename = pathinfo($filename, PATHINFO_FILENAME) . '_private.pem';
 
         $encPath = storage_path("app/encrypted");
@@ -233,99 +189,149 @@ class FileController extends Controller
 
         return redirect()->back();
     }
+    public function decryptAES(Request $request)
+{
+    $request->validate([
+        'file' => 'required|file',
+        'password' => 'required|string|min:4',
+    ]);
+
+    $file = $request->file('file');
+    $password = $request->input('password');
+    $data = file_get_contents($file->getRealPath());
+
+    if (substr($data, 0, 3) !== 'AES') {
+        return back()->withErrors(['file' => 'Invalid file format.']);
+    }
+
+    $salt = substr($data, 3, 16);
+    $iv = substr($data, 19, 16);
+    $hmac = substr($data, -32);
+    $cipher = substr($data, 35, -32);
+
+    $key = hash_pbkdf2("sha256", $password, $salt, 100000, 32, true);
+    $calculatedHmac = hash_hmac('sha256', $salt . $iv . $cipher, $key, true);
+
+    if (!hash_equals($hmac, $calculatedHmac)) {
+        return back()->withErrors(['password' => 'Decryption failed: wrong password or tampered file.']);
+    }
+
+    $decrypted = openssl_decrypt($cipher, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+    $outputName = 'decrypted_aes_' . time() . '.txt';
+    $downloadUrl = route('download.decrypted', ['filename' => $outputName]);
+
+    $decryptedPath = storage_path('app/decrypted');
+    if (!file_exists($decryptedPath)) mkdir($decryptedPath, 0777, true);
+    file_put_contents("$decryptedPath/$outputName", $decrypted);
+
+    session()->flash('success', 'AES decryption successful!');
+    session()->flash('download_url', $downloadUrl);
+    session()->flash('download_name', $outputName);
+    return redirect()->route('decrypt.form');
+}
+
+
+    public function decryptRSA(Request $request)
+{
+    $request->validate([
+        'file' => 'required|file',
+        'private_key' => 'required|file',
+        'password' => 'required|string|min:4',
+    ]);
+
+    $encFile = $request->file('file');
+    $keyFile = $request->file('private_key');
+    $password = $request->input('password');
+
+    $encData = file_get_contents($encFile->getRealPath());
+    $privateKeyData = file_get_contents($keyFile->getRealPath());
+
+    if (substr($encData, 0, 3) !== 'RSA') {
+        return back()->withErrors(['file' => 'Invalid file format.']);
+    }
+
+    $cipher = substr($encData, 3);
+    $privateKey = openssl_pkey_get_private($privateKeyData, $password);
+    if (!$privateKey) {
+        return back()->withErrors(['private_key' => 'Failed to load private key.']);
+    }
+
+    if (!openssl_private_decrypt($cipher, $decrypted, $privateKey, OPENSSL_PKCS1_OAEP_PADDING)) {
+        $error = openssl_error_string();
+        return back()->withErrors(['file' => 'RSA decryption failed. ' . $error]);
+    }
+
+    $outputName = 'decrypted_rsa_' . time() . '.txt';
+    $downloadUrl = route('download.decrypted', ['filename' => $outputName]);
+
+    $decryptedPath = storage_path('app/decrypted');
+    if (!file_exists($decryptedPath)) mkdir($decryptedPath, 0777, true);
+    file_put_contents("$decryptedPath/$outputName", $decrypted);
+
+    session()->flash('success', 'RSA decryption successful!');
+    session()->flash('download_url', $downloadUrl);
+    session()->flash('download_name', $outputName);
+    return redirect()->route('decrypt.form');
+}
+
+
+
+    public function decryptHybrid(Request $request)
+{
+    $request->validate([
+        'file' => 'required|file',
+        'private_key' => 'required|file',
+        'password' => 'required|string|min:4',
+    ]);
+
+    $encFile = $request->file('file');
+    $keyFile = $request->file('private_key');
+    $password = $request->input('password');
+    $encData = file_get_contents($encFile->getRealPath());
+    $privateKeyData = file_get_contents($keyFile->getRealPath());
+
+    if (substr($encData, 0, 3) !== 'HYB') {
+        return back()->withErrors(['file' => 'Invalid file format. File must start with HYB.']);
+    }
+
+    $keyLen = unpack('n', substr($encData, 3, 2))[1];
+    $encryptedAESKey = substr($encData, 5, $keyLen);
+    $iv = substr($encData, 5 + $keyLen, 16);
+    $cipherText = substr($encData, 5 + $keyLen + 16);
+
+    $privateKey = openssl_pkey_get_private($privateKeyData, $password);
+    if (!$privateKey) {
+        return back()->withErrors(['private_key' => 'Invalid private key or password.']);
+    }
+
+    if (!openssl_private_decrypt($encryptedAESKey, $aesKey, $privateKey, OPENSSL_PKCS1_OAEP_PADDING)) {
+        return back()->withErrors(['file' => 'Failed to decrypt AES key.']);
+    }
+
+    $decrypted = openssl_decrypt($cipherText, 'aes-256-cbc', $aesKey, OPENSSL_RAW_DATA, $iv);
+    if ($decrypted === false) {
+        return back()->withErrors(['file' => 'Failed to decrypt the final ciphertext.']);
+    }
+
+    $outputName = 'decrypted_hybrid_' . time() . '.txt';
+    $downloadUrl = route('download.decrypted', ['filename' => $outputName]);
+
+    $decryptedPath = storage_path('app/decrypted');
+    if (!file_exists($decryptedPath)) mkdir($decryptedPath, 0777, true);
+    file_put_contents("$decryptedPath/$outputName", $decrypted);
+
+    session()->flash('success', 'Hybrid decryption successful!');
+    session()->flash('download_url', $downloadUrl);
+    session()->flash('download_name', $outputName);
+    return redirect()->route('decrypt.form');
+}
+
+
 
     public function showRSAEncryptForm() { return view('rsa_encrypt'); }
     public function showRSADecryptForm() { return view('rsa_decrypt'); }
     public function showHybridEncryptForm() { return view('hybrid_encrypt'); }
     public function showHybridDecryptForm() { return view('hybrid_decrypt'); }
-
-    public function decryptRSA(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|file',
-            'private_key' => 'required|file',
-            'password' => 'required|string|min:4',
-        ]);
-
-        $encFile = $request->file('file');
-        $keyFile = $request->file('private_key');
-        $password = $request->input('password');
-
-        $encData = file_get_contents($encFile->getRealPath());
-        $privateKeyData = file_get_contents($keyFile->getRealPath());
-
-        if (substr($encData, 0, 3) !== 'RSA') {
-            return back()->withErrors(['file' => 'Invalid file format.']);
-        }
-
-        $cipher = substr($encData, 3);
-
-        $privateKey = openssl_pkey_get_private($privateKeyData, $password);
-        if (!$privateKey) {
-            return back()->withErrors(['private_key' => 'Invalid private key or wrong password.']);
-        }
-
-        if (!openssl_private_decrypt($cipher, $decrypted, $privateKey, OPENSSL_PKCS1_OAEP_PADDING)) {
-            return back()->withErrors(['file' => 'Decryption failed.']);
-        }
-
-        $outputName = 'decrypted_rsa_' . time() . '.txt';
-
-        $decryptedPath = storage_path('app/decrypted');
-        if (!file_exists($decryptedPath)) {
-            mkdir($decryptedPath, 0777, true);
-        }
-
-        Storage::put("decrypted/$outputName", $decrypted);
-        session()->flash('success', 'RSA decryption successful!');
-        return response()->download(storage_path("app/decrypted/$outputName"))->deleteFileAfterSend();
-    }
-
-    public function decryptHybrid(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|file',
-            'private_key' => 'required|file',
-            'password' => 'required|string|min:4',
-        ]);
-
-        $encFile = $request->file('file');
-        $keyFile = $request->file('private_key');
-        $password = $request->input('password');
-
-        $encData = file_get_contents($encFile->getRealPath());
-        $privateKeyData = file_get_contents($keyFile->getRealPath());
-
-        if (substr($encData, 0, 3) !== 'HYB') {
-            return back()->withErrors(['file' => 'Invalid file format.']);
-        }
-
-        $keyLen = unpack('n', substr($encData, 3, 2))[1];
-        $encryptedAESKey = substr($encData, 5, $keyLen);
-        $iv = substr($encData, 5 + $keyLen, 16);
-        $cipherText = substr($encData, 5 + $keyLen + 16);
-
-        $privateKey = openssl_pkey_get_private($privateKeyData, $password);
-        if (!$privateKey) {
-            return back()->withErrors(['private_key' => 'Invalid private key or password.']);
-        }
-
-        if (!openssl_private_decrypt($encryptedAESKey, $aesKey, $privateKey, OPENSSL_PKCS1_OAEP_PADDING)) {
-            return back()->withErrors(['file' => 'Failed to decrypt AES key.']);
-        }
-
-        $decrypted = openssl_decrypt($cipherText, 'aes-256-cbc', $aesKey, OPENSSL_RAW_DATA, $iv);
-        $outputName = 'decrypted_hybrid_' . time() . '.txt';
-
-        $decryptedPath = storage_path('app/decrypted');
-        if (!file_exists($decryptedPath)) {
-            mkdir($decryptedPath, 0777, true);
-        }
-
-        Storage::put("decrypted/$outputName", $decrypted);
-        session()->flash('success', 'Hybrid decryption successful!');
-        return response()->download(storage_path("app/decrypted/$outputName"))->deleteFileAfterSend();
-    }
 
     public function showHistory()
     {
@@ -333,18 +339,41 @@ class FileController extends Controller
         return view('history', compact('logs'));
     }
 
-        public function autoEncrypt(Request $request)
+    public function autoEncrypt(Request $request)
     {
         $method = $request->input('method');
 
         if ($method === 'AES') {
-            return $this->encryptAES($request);
+            return $this->encryptAES($request); // Requires user-entered password
         } elseif ($method === 'RSA') {
-            return $this->encryptRSA($request);
+            return $this->encryptRSA($request); // Uses login password from session
         } elseif ($method === 'HYBRID') {
-            return $this->encryptHybrid($request);
+            return $this->encryptHybrid($request); // Uses login password from session
         }
 
         return back()->withErrors(['method' => 'Invalid encryption method selected.']);
+    }
+
+    public function autoDecrypt(Request $request)
+    {
+        $mode = $request->input('mode');
+
+        if ($mode === 'AES') {
+            return $this->decryptAES($request);
+        } elseif ($mode === 'RSA') {
+            return $this->decryptRSA($request);
+        } elseif ($mode === 'HYBRID') {
+            return $this->decryptHybrid($request);
+        }
+
+        return back()->withErrors(['mode' => 'Invalid decryption mode selected.']);
+    }
+
+
+    public function downloadPrivateKey($filename)
+    {
+        $path = storage_path("app/keys/$filename");
+        if (!file_exists($path)) abort(404);
+        return response()->download($path);
     }
 }

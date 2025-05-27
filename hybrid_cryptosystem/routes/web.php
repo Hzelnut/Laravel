@@ -30,36 +30,43 @@ Route::middleware('auth')->group(function () {
     Route::post('/encrypt/hybrid', [FileController::class, 'encryptHybrid'])->name('encrypt.hybrid');
 
     // Decryption routes
-    Route::get('/decrypt', [FileController::class, 'showDecryptForm'])->name('decrypt.form');
-    Route::post('/decrypt/aes', [FileController::class, 'decryptAES'])->name('decrypt.aes');
+    Route::get('/decrypt', function () {
+        return view('decrypt_all');
+    })->name('decrypt.form');
 
-    Route::get('/decrypt/rsa', [FileController::class, 'showRSADecryptForm'])->name('decrypt.rsa.form');
-    Route::post('/decrypt/rsa', [FileController::class, 'decryptRSA'])->name('decrypt.rsa');
+    Route::post('/decrypt/auto', [FileController::class, 'autoDecrypt'])->name('decrypt.auto');
 
-    Route::get('/decrypt/hybrid', [FileController::class, 'showHybridDecryptForm'])->name('decrypt.hybrid.form');
-    Route::post('/decrypt/hybrid', [FileController::class, 'decryptHybrid'])->name('decrypt.hybrid');
-
-    // History
+    // History page
     Route::get('/history', [FileController::class, 'showHistory'])->name('history');
 
-    // Encrypted file download
+    // ✅ FIXED: Safe decrypted file download route
+    Route::get('/download/decrypted/{filename}', function ($filename) {
+        $filename = basename($filename); // sanitize to avoid traversal
+        $path = storage_path("app/decrypted/{$filename}");
+
+        if (!file_exists($path)) {
+            abort(404);
+        }
+
+        return response()->download($path)->deleteFileAfterSend();
+    })->name('download.decrypted');
+
+    // ✅ FIXED: Safe encrypted file download route
     Route::get('/download/encrypted/{filename}', function ($filename) {
-    $path = storage_path("app/encrypted/{$filename}");
+        $filename = basename($filename); // sanitize to avoid traversal
+        $path = storage_path("app/encrypted/{$filename}");
 
-    if (!file_exists($path)) {
-        abort(404);
-    }
+        if (!file_exists($path)) {
+            abort(404);
+        }
 
-    // Custom name for download (keep .enc extension)
-    $downloadName = session('original_name')
-        ? pathinfo(session('original_name'), PATHINFO_FILENAME) . '.' . pathinfo($filename, PATHINFO_EXTENSION)
-        : $filename;
+        // Keep custom filename if available
+        $downloadName = session('original_name')
+            ? pathinfo(session('original_name'), PATHINFO_FILENAME) . '.' . pathinfo($filename, PATHINFO_EXTENSION)
+            : $filename;
 
-    return response()->download($path, $downloadName)->deleteFileAfterSend();
-})->name('download.encrypted')->middleware('auth');
-
-
-
+        return response()->download($path, $downloadName)->deleteFileAfterSend();
+    })->name('download.encrypted');
 });
 
 require __DIR__.'/auth.php';

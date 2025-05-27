@@ -6,25 +6,26 @@
 
                 <form method="POST" action="{{ route('encrypt.auto') }}" enctype="multipart/form-data">
                     @csrf
+
                     <!-- File upload -->
                     <div class="mb-4">
                         <label class="block font-medium">Select File</label>
                         <input type="file" name="file" class="border rounded p-2 w-full" required>
                     </div>
 
-                    <!-- Output filename (optional) -->
+                    <!-- Output filename -->
                     <div class="mb-4">
                         <label class="block font-medium">Output Filename</label>
                         <input type="text" name="filename" class="border rounded p-2 w-full" placeholder="Optional">
                     </div>
 
-                    <!-- Password -->
+                    <!-- Password (used for all modes) -->
                     <div class="mb-4">
-                        <label class="block font-medium">Password (for AES)</label>
-                        <input type="password" name="password" class="border rounded p-2 w-full">
+                        <label class="block font-medium">Password (used for AES, RSA, and Hybrid)</label>
+                        <input type="password" name="password" class="border rounded p-2 w-full" required>
                     </div>
 
-                    <!-- Encryption Method -->
+                    <!-- Encryption Mode -->
                     <div class="mb-4">
                         <label class="block font-medium">Encryption Mode</label>
                         <select name="method" class="border rounded p-2 w-full" required>

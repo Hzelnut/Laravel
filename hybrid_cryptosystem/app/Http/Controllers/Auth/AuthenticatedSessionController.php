@@ -28,6 +28,9 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        // ✅ Store password in session for later use during decryption
+        $request->session()->put('password', $request->input('password'));
+
         return redirect()->intended('/encrypt');
     }
 
