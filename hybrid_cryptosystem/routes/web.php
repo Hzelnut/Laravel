@@ -55,15 +55,6 @@ Route::middleware('auth')->group(function () {
         return response()->download($path)->deleteFileAfterSend();
     })->name('download.decrypted');
 
-
-    Route::get('/history/received', [FileController::class, 'receivedHistory'])->name('history.received');
-
-    Route::post('/history/reset', function () {
-    \App\Models\EncryptionLog::where('user_id', Auth::id())->delete();
-    return redirect()->route('history')->with('success', 'History cleared.');
-})->name('history.reset');
-
-
     // Secure encrypted file download
     Route::get('/download/encrypted/{filename}', function ($filename) {
         $filename = basename($filename);

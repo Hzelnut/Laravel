@@ -198,8 +198,6 @@ class FileController extends Controller
         'password' => 'required|string|min:4',
     ]);
 
-    $start = microtime(true); // Start timing
-
     $file = $request->file('file');
     $password = $request->input('password');
     $data = file_get_contents($file->getRealPath());
@@ -221,35 +219,19 @@ class FileController extends Controller
     }
 
     $decrypted = openssl_decrypt($cipher, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
-
-    if ($decrypted === false) {
-        return back()->withErrors(['file' => 'Decryption failed due to an internal error.']);
-    }
-
     $outputName = 'decrypted_aes_' . time() . '.txt';
+    $downloadUrl = route('download.decrypted', ['filename' => $outputName]);
+
     $decryptedPath = storage_path('app/decrypted');
-    if (!file_exists($decryptedPath)) {
-        mkdir($decryptedPath, 0777, true);
-    }
+    if (!file_exists($decryptedPath)) mkdir($decryptedPath, 0777, true);
     file_put_contents("$decryptedPath/$outputName", $decrypted);
 
-    // ✅ Log the decryption
-    \App\Models\EncryptionLog::create([
-        'user_id'   => auth()->id(),
-        'file_name' => $file->getClientOriginalName(),
-        'algorithm' => 'AES',
-        'file_size' => $file->getSize(),
-        'duration'  => round(microtime(true) - $start, 5),
-        'type'      => 'DECRYPT',
-    ]);
-
-    // ✅ SweetAlert download
     session()->flash('success', 'AES decryption successful!');
-    session()->flash('download_url', route('download.decrypted', ['filename' => $outputName]));
+    session()->flash('download_url', $downloadUrl);
     session()->flash('download_name', $outputName);
-
     return redirect()->route('decrypt.form');
 }
+
 
     public function decryptRSA(Request $request)
 {
@@ -258,8 +240,6 @@ class FileController extends Controller
         'private_key' => 'required|file',
         'password' => 'required|string|min:4',
     ]);
-
-    $start = microtime(true);
 
     $encFile = $request->file('file');
     $keyFile = $request->file('private_key');
@@ -290,15 +270,6 @@ class FileController extends Controller
     if (!file_exists($decryptedPath)) mkdir($decryptedPath, 0777, true);
     file_put_contents("$decryptedPath/$outputName", $decrypted);
 
-    \App\Models\EncryptionLog::create([
-        'user_id'   => auth()->id(),
-        'file_name' => $encFile->getClientOriginalName(),
-        'algorithm' => 'RSA',
-        'file_size' => $encFile->getSize(),
-        'duration'  => round(microtime(true) - $start, 5),
-        'type'      => 'DECRYPT',
-    ]);
-
     session()->flash('success', 'RSA decryption successful!');
     session()->flash('download_url', $downloadUrl);
     session()->flash('download_name', $outputName);
@@ -312,8 +283,6 @@ class FileController extends Controller
         'private_key' => 'required|file',
         'password' => 'required|string|min:4',
     ]);
-
-    $start = microtime(true); // ✅ Track decryption time
 
     $encFile = $request->file('file');
     $keyFile = $request->file('private_key');
@@ -351,20 +320,9 @@ class FileController extends Controller
     if (!file_exists($decryptedPath)) mkdir($decryptedPath, 0777, true);
     file_put_contents("$decryptedPath/$outputName", $decrypted);
 
-    // ✅ Log hybrid decryption
-    \App\Models\EncryptionLog::create([
-        'user_id'   => auth()->id(),
-        'file_name' => $encFile->getClientOriginalName(),
-        'algorithm' => 'HYBRID',
-        'file_size' => $encFile->getSize(),
-        'duration'  => round(microtime(true) - $start, 5),
-        'type'      => 'DECRYPT',
-    ]);
-
     session()->flash('success', 'Hybrid decryption successful!');
     session()->flash('download_url', $downloadUrl);
     session()->flash('download_name', $outputName);
-
     return redirect()->route('decrypt.form');
 }
 
@@ -374,31 +332,10 @@ class FileController extends Controller
     public function showHybridDecryptForm() { return view('hybrid_decrypt'); }
 
     public function showHistory()
-{
-    $userId = Auth::id();
-
-    $logs = \App\Models\EncryptionLog::where('user_id', $userId)
-        ->orWhere('recipient_id', $userId)
-        ->latest()
-        ->get();
-
-    $encryptionLogs = $logs->where('type', 'ENCRYPT')->values();
-    $decryptionLogs = $logs->where('type', 'DECRYPT')->values();
-
-    return view('history', compact('encryptionLogs', 'decryptionLogs'));
-}
-
-
-
-public function receivedHistory()
-{
-    $logs = \App\Models\EncryptionLog::with('user')
-        ->where('recipient_id', Auth::id())
-        ->latest()
-        ->get();
-
-    return view('received_history', compact('logs'));
-}
+    {
+        $logs = EncryptionLog::where('user_id', Auth::id())->latest()->get();
+        return view('history', compact('logs'));
+    }
 
     public function autoEncrypt(Request $request)
 {
