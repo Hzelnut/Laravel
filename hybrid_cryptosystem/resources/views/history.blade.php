@@ -13,23 +13,23 @@
             </div>
 
             <!-- Chart Section Side-by-Side -->
-            <div class="bg-white p-6 rounded shadow-sm">
-                <h2 class="text-xl font-bold mb-4">Encryption vs Decryption Time (seconds)</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Charts Side-by-Side -->
-<div class="flex flex-wrap gap-6 justify-center mb-10">
-    <div class="w-full md:w-1/2 bg-white p-4 rounded shadow">
-        <h2 class="text-center font-semibold mb-2">Encryption Duration</h2>
-        <canvas id="encryptionChart" height="200"></canvas>
-    </div>
-    <div class="w-full md:w-1/2 bg-white p-4 rounded shadow">
-        <h2 class="text-center font-semibold mb-2">Decryption Duration</h2>
-        <canvas id="decryptionChart" height="200"></canvas>
+<div class="bg-white p-6 rounded shadow-sm">
+    <h2 class="text-xl font-bold mb-4">Encryption vs Decryption Time (seconds)</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Encryption Chart -->
+        <div class="bg-white p-4 rounded shadow">
+            <h2 class="text-center font-semibold mb-2">Encryption Duration</h2>
+            <canvas id="encryptionChart" height="200"></canvas>
+        </div>
+
+        <!-- Decryption Chart -->
+        <div class="bg-white p-4 rounded shadow">
+            <h2 class="text-center font-semibold mb-2">Decryption Duration</h2>
+            <canvas id="decryptionChart" height="200"></canvas>
+        </div>
     </div>
 </div>
 
-                </div>
-            </div>
 
             <!-- Encryption Table -->
             <div class="bg-white p-6 rounded shadow-sm">
