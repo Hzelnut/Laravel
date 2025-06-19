@@ -23,6 +23,8 @@ class User extends Authenticatable
         'password',
         'public_key',
         'private_key',
+        'last_login_at',
+
     ];
 
     /**
