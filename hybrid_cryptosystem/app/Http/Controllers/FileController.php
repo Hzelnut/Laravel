@@ -6,14 +6,16 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
 use App\Models\EncryptionLog;
+use App\Models\User;
+
 
 class FileController extends Controller
 {
     public function showEncryptForm()
     {
-        return view('encrypt');
+        $users = \App\Models\User::where('id', '!=', auth()->id())->get(); // exclude self
+        return view('profile.encrypt_all', compact('users'));
     }
-
     public function showDecryptForm()
     {
         return view('decrypt');
@@ -128,67 +130,67 @@ class FileController extends Controller
     }
 
     public function encryptHybrid(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|file',
-            'filename' => 'required|string',
-            'password' => 'required|string|min:4',
-        ]);
+{
+    $request->validate([
+        'file' => 'required|file',
+        'filename' => 'required|string',
+        'password' => 'required|string|min:4',
+        'recipient_id' => 'required|exists:users,id',
+    ]);
 
-        $file = $request->file('file');
-        $filename = $request->input('filename') . '.enc';
-        $password = $request->input('password');
-        $data = file_get_contents($file->getRealPath());
+    $file = $request->file('file');
+    $filename = $request->input('filename') . '.enc';
+    $password = $request->input('password');
+    $recipientId = $request->input('recipient_id');
+    $data = file_get_contents($file->getRealPath());
 
-        $start = microtime(true);
+    $start = microtime(true);
 
-        $aesKey = random_bytes(32);
-        $iv = random_bytes(16);
-        $cipher = openssl_encrypt($data, 'aes-256-cbc', $aesKey, OPENSSL_RAW_DATA, $iv);
+    // Step 1: Generate AES key + IV
+    $aesKey = random_bytes(32); // 256-bit AES key
+    $iv = random_bytes(16);     // 128-bit IV
 
-        $rsaConfig = [
-            "private_key_bits" => 2048,
-            "private_key_type" => OPENSSL_KEYTYPE_RSA,
-        ];
+    // Step 2: Encrypt file with AES
+    $cipher = openssl_encrypt($data, 'aes-256-cbc', $aesKey, OPENSSL_RAW_DATA, $iv);
 
-        $res = openssl_pkey_new($rsaConfig);
-        if (!$res) {
-            $msg = "Failed to generate RSA key. OpenSSL error: " . implode(", ", array_filter([openssl_error_string()]));
-            return back()->withErrors(['file' => $msg]);
-        }
+    // Step 3: Get recipient's public key from DB
+    $recipient = User::findOrFail($recipientId);
+    $recipientPublicKey = $recipient->public_key;
 
-        openssl_pkey_export($res, $privateKeyPEM, $password);
-        $pubKeyDetails = openssl_pkey_get_details($res);
-        $publicKeyPEM = $pubKeyDetails["key"];
-
-        openssl_public_encrypt($aesKey, $encryptedAESKey, $publicKeyPEM, OPENSSL_PKCS1_OAEP_PADDING);
-        $hybridData = 'HYB' . pack('n', strlen($encryptedAESKey)) . $encryptedAESKey . $iv . $cipher;
-
-        $encPath = storage_path("app/encrypted");
-        $keyPath = storage_path("app/keys");
-
-        if (!file_exists($encPath)) mkdir($encPath, 0777, true);
-        if (!file_exists($keyPath)) mkdir($keyPath, 0777, true);
-
-        file_put_contents("$encPath/$filename", $hybridData);
-        file_put_contents("$keyPath/" . pathinfo($filename, PATHINFO_FILENAME) . '_private.pem', $privateKeyPEM);
-
-        $end = microtime(true);
-
-        EncryptionLog::create([
-            'user_id' => Auth::id(),
-            'file_name' => $filename,
-            'algorithm' => 'HYBRID',
-            'file_size' => strlen($data),
-            'duration' => round($end - $start, 3),
-        ]);
-
-        session()->flash('success', 'Hybrid encryption successful! Download will begin now.');
-        session()->flash('download_file', $filename);
-        session()->flash('original_name', $filename);
-
-        return redirect()->back();
+    if (!$recipientPublicKey) {
+        return back()->withErrors(['recipient_id' => 'Recipient does not have a public key.']);
     }
+
+    // Step 4: Encrypt AES key with recipient's public key
+    if (!openssl_public_encrypt($aesKey, $encryptedAESKey, $recipientPublicKey, OPENSSL_PKCS1_OAEP_PADDING)) {
+        return back()->withErrors(['file' => 'Failed to encrypt AES key with recipient public key.']);
+    }
+
+    // Step 5: Combine data into Hybrid file format
+    $hybridData = 'HYB' . pack('n', strlen($encryptedAESKey)) . $encryptedAESKey . $iv . $cipher;
+
+    // Step 6: Store encrypted file
+    $encPath = storage_path("app/encrypted");
+    if (!file_exists($encPath)) mkdir($encPath, 0777, true);
+    file_put_contents("$encPath/$filename", $hybridData);
+
+    // Step 7: Log it
+    EncryptionLog::create([
+        'user_id' => Auth::id(),
+        'file_name' => $filename,
+        'algorithm' => 'HYBRID',
+        'file_size' => strlen($data),
+        'duration' => round(microtime(true) - $start, 3),
+    ]);
+
+    // Step 8: Return success
+    session()->flash('success', 'Hybrid encryption successful! Download will begin now.');
+    session()->flash('download_file', $filename);
+    session()->flash('original_name', $filename);
+
+    return redirect()->back();
+}
+
     public function decryptAES(Request $request)
 {
     $request->validate([
@@ -274,8 +276,6 @@ class FileController extends Controller
     return redirect()->route('decrypt.form');
 }
 
-
-
     public function decryptHybrid(Request $request)
 {
     $request->validate([
@@ -326,8 +326,6 @@ class FileController extends Controller
     return redirect()->route('decrypt.form');
 }
 
-
-
     public function showRSAEncryptForm() { return view('rsa_encrypt'); }
     public function showRSADecryptForm() { return view('rsa_decrypt'); }
     public function showHybridEncryptForm() { return view('hybrid_encrypt'); }
@@ -340,19 +338,35 @@ class FileController extends Controller
     }
 
     public function autoEncrypt(Request $request)
-    {
-        $method = $request->input('method');
+{
+    $method = $request->input('method');
+    $start = microtime(true); // Start timer
+    $response = null;
 
-        if ($method === 'AES') {
-            return $this->encryptAES($request); // Requires user-entered password
-        } elseif ($method === 'RSA') {
-            return $this->encryptRSA($request); // Uses login password from session
-        } elseif ($method === 'HYBRID') {
-            return $this->encryptHybrid($request); // Uses login password from session
-        }
-
+    if ($method === 'AES') {
+        $response = $this->encryptAES($request);
+    } elseif ($method === 'RSA') {
+        $response = $this->encryptRSA($request);
+    } elseif ($method === 'HYBRID') {
+        $response = $this->encryptHybrid($request);
+    } else {
         return back()->withErrors(['method' => 'Invalid encryption method selected.']);
     }
+
+    // Log only if encryption worked
+    if ($response instanceof \Illuminate\Http\Response && $request->file('file')) {
+        \App\Models\EncryptionLog::create([
+            'user_id'   => auth()->id(),
+            'filename'  => $request->file('file')->getClientOriginalName(),
+            'algorithm' => strtoupper($method),
+            'size'      => $request->file('file')->getSize(),
+            'time'      => round(microtime(true) - $start, 5),
+            'created_at' => now(),
+        ]);
+    }
+
+    return $response;
+}
 
     public function autoDecrypt(Request $request)
     {
@@ -368,7 +382,6 @@ class FileController extends Controller
 
         return back()->withErrors(['mode' => 'Invalid decryption mode selected.']);
     }
-
 
     public function downloadPrivateKey($filename)
     {
