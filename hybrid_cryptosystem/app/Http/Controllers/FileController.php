@@ -30,6 +30,14 @@ class FileController extends Controller
         ]);
 
         $file = $request->file('file');
+
+        $originalName = $request->file('file')->getClientOriginalName();
+
+        if (str_ends_with($originalName, '.enc')) {
+        return back()->withErrors(['file' => 'This file is already encrypted. Please upload a different file.']);
+        }
+
+
         $password = $request->input('password');
         $filename = $request->input('filename') . '.enc';
         $data = file_get_contents($file->getRealPath());
@@ -74,6 +82,14 @@ class FileController extends Controller
         ]);
 
         $file = $request->file('file');
+
+        $originalName = $request->file('file')->getClientOriginalName();
+
+        if (str_ends_with($originalName, '.enc')) {
+            return back()->withErrors(['file' => 'This file is already encrypted. Please upload a different file.']);
+        }
+
+
         $filename = $request->input('filename') ?: $file->getClientOriginalName();
         $password = $request->input('password');
         $data = file_get_contents($file->getRealPath());
@@ -139,6 +155,14 @@ class FileController extends Controller
     ]);
 
     $file = $request->file('file');
+
+        $originalName = $request->file('file')->getClientOriginalName();
+
+    if (str_ends_with($originalName, '.enc')) {
+        return back()->withErrors(['file' => 'This file is already encrypted. Please upload a different file.']);
+    }
+
+
     $filename = $request->input('filename') . '.enc';
     $password = $request->input('password');
     $recipientId = $request->input('recipient_id');
