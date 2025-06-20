@@ -4,74 +4,63 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\FileController;
 use App\Http\Controllers\KeyController;
-use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Auth;
 
+// Public Route
 Route::get('/', function () {
     return view('welcome');
 });
 
+// Dashboard
 Route::get('/dashboard', function () {
     return view('dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
-// Routes that require authentication
+// Authenticated Routes
 Route::middleware('auth')->group(function () {
 
-    // Profile routes
+    // 🔐 Profile
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    // Unified encryption page (Blade: encrypt_all.blade.php)
+    // 🔏 Encryption
     Route::get('/encrypt', [FileController::class, 'showEncryptForm'])->name('encrypt.form');
     Route::post('/encrypt/auto', [FileController::class, 'autoEncrypt'])->name('encrypt.auto');
-
-    // Optional: if using separate encryption methods
     Route::post('/encrypt/aes', [FileController::class, 'encryptAES'])->name('encrypt.aes');
     Route::post('/encrypt/rsa', [FileController::class, 'encryptRSA'])->name('encrypt.rsa');
     Route::post('/encrypt/hybrid', [FileController::class, 'encryptHybrid'])->name('encrypt.hybrid');
 
-    // Decryption
-    Route::get('/decrypt', function () {
-        return view('decrypt_all');
-    })->name('decrypt.form');
+    // 🔓 Decryption
+    Route::get('/decrypt', fn() => view('decrypt_all'))->name('decrypt.form');
     Route::post('/decrypt/auto', [FileController::class, 'autoDecrypt'])->name('decrypt.auto');
 
-    // Encryption history
+    // 📊 Encryption History
     Route::get('/history', [FileController::class, 'showHistory'])->name('history');
+    Route::get('/history/received', [FileController::class, 'receivedHistory'])->name('history.received');
 
-    // Private key download
-    Route::get('/download-private-key', [KeyController::class, 'download'])->name('download.private.key');
+    // Reset history
+    Route::post('/history/reset', function () {
+        \App\Models\EncryptionLog::where('user_id', Auth::id())->delete();
+        return redirect()->route('history')->with('success', 'History cleared.');
+    })->name('history.reset');
 
-    // Secure decrypted file download
+    // 🔐 Private Key Download
+    Route::get('/key/download', [KeyController::class, 'download'])->name('key.download');
+
+    // 📥 Download Decrypted Files
     Route::get('/download/decrypted/{filename}', function ($filename) {
-        $filename = basename($filename);
-        $path = storage_path("app/decrypted/{$filename}");
-
-        if (!file_exists($path)) {
-            abort(404);
-        }
-
+        $path = storage_path("app/decrypted/" . basename($filename));
+        abort_unless(file_exists($path), 404);
         return response()->download($path)->deleteFileAfterSend();
     })->name('download.decrypted');
 
-
-    Route::get('/history/received', [FileController::class, 'receivedHistory'])->name('history.received');
-
-    Route::post('/history/reset', function () {
-    \App\Models\EncryptionLog::where('user_id', Auth::id())->delete();
-    return redirect()->route('history')->with('success', 'History cleared.');
-})->name('history.reset');
-
-
-    // Secure encrypted file download
+    // 📤 Download Encrypted Files
     Route::get('/download/encrypted/{filename}', function ($filename) {
         $filename = basename($filename);
         $path = storage_path("app/encrypted/{$filename}");
 
-        if (!file_exists($path)) {
-            abort(404);
-        }
+        abort_unless(file_exists($path), 404);
 
         $downloadName = session('original_name')
             ? pathinfo(session('original_name'), PATHINFO_FILENAME) . '.' . pathinfo($filename, PATHINFO_EXTENSION)
@@ -81,4 +70,4 @@ Route::middleware('auth')->group(function () {
     })->name('download.encrypted');
 });
 
-require __DIR__.'/auth.php';
+require __DIR__ . '/auth.php';
