@@ -33,23 +33,21 @@
     </div>
 
     {{-- ✅ SweetAlert2 CDN --}}
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<script>
-    function confirmDownload() {
-        Swal.fire({
-            title: 'Download Private Key?',
-            text: "Make sure to store this file securely. You need it to decrypt files. If you lose it, recovery is not possible.",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Download',
-            cancelButtonText: 'Cancel'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                // ✅ Redirect to the download route
-                window.location.href = '{{ route('key.download') }}';
-            }
-        });
-    }
-</script>
-
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        function confirmDownload() {
+            Swal.fire({
+                title: 'Download Private Key?',
+                text: "Make sure to store this file securely. You need it to decrypt files. If you lose it, recovery is not possible.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Download',
+                cancelButtonText: 'Cancel'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    window.location.href = '{{ route('download.private.key') }}';
+                }
+            });
+        }
+    </script>
 </x-app-layout>

@@ -2,31 +2,21 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Response;
 
 class KeyController extends Controller
 {
-    /**
-     * Download the currently authenticated user's private RSA key.
-     */
     public function download()
     {
         $user = Auth::user();
 
-        // Check if private key exists
-        if (empty($user->private_key)) {
-            return back()->withErrors(['private_key' => 'No private key found for your account.']);
+        if (!$user->private_key) {
+            return back()->with('error', 'No private key found.');
         }
 
-        // Try decrypting the private key
-        try {
-            $privateKey = Crypt::decryptString($user->private_key);
-        } catch (\Exception $e) {
-            return back()->withErrors(['private_key' => 'Failed to decrypt your private key.']);
-        }
-
+        $privateKey = Crypt::decryptString($user->private_key);
         $fileName = 'private_key_' . $user->id . '.pem';
 
         return response($privateKey, 200, [
