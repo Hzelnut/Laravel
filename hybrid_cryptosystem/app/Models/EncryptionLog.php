@@ -16,7 +16,8 @@ class EncryptionLog extends Model
         'algorithm',
         'file_size',
         'duration',
-        'type', // include this if you're distinguishing ENCRYPT/DECRYPT
+        'type',
+        'memory_used',// include this if you're distinguishing ENCRYPT/DECRYPT
     ];
 
     /**

@@ -43,6 +43,44 @@
         </div>
     </div>
 
+    {{-- Decryption Manual --}}
+<<div class="max-w-4xl mx-auto sm:px-6 lg:px-8 mt-6">
+  <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg p-6">
+    <h3 class="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
+    How to Use the Decryption Tool
+  </h3>
+  <ol class="list-decimal list-inside space-y-2 text-gray-800 dark:text-gray-200">
+    <li>
+      <strong>Select Decryption Mode:</strong>
+      <ul class="list-disc list-inside ml-4 text-gray-700 dark:text-gray-300">
+        <li><em>AES:</em> Only a password is required.</li>
+        <li><em>RSA:</em> Requires your private key (.pem) and its password.</li>
+        <li><em>Hybrid:</em> Requires both your private key and password.</li>
+      </ul>
+    </li>
+    <li>
+      <strong>Upload Encrypted File:</strong> Choose the <code>.enc</code> file you received.
+    </li>
+    <li>
+      <strong>Provide Your Private Key:</strong> (RSA/Hybrid only)
+      Upload your <code>.pem</code> file you downloaded earlier.
+    </li>
+    <li>
+      <strong>Enter Password:</strong>
+      - AES: your encryption password.
+      - RSA/Hybrid: the password that protects your private key.
+    </li>
+    <li>
+      <strong>Decrypt:</strong> Click <code>Decrypt and Download</code> to retrieve your original file.
+    </li>
+    <li>
+      <strong>Verify Integrity:</strong>
+      Make sure the downloaded file opens correctly—if not, recheck your mode, key, or password.
+    </li>
+  </ol>
+</div>
+
+
     <!-- JS to toggle .pem field visibility -->
     <script>
         const modeSelect = document.getElementById('mode');

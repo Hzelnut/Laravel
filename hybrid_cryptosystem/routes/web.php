@@ -79,6 +79,12 @@ Route::middleware('auth')->group(function () {
 
         return response()->download($path, $downloadName)->deleteFileAfterSend();
     })->name('download.encrypted');
+
+    Route::get('/home', function(){
+    return redirect()->route('dashboard');
+});
+
+
 });
 
 require __DIR__.'/auth.php';

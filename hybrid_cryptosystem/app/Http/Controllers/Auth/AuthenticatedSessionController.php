@@ -31,7 +31,7 @@ class AuthenticatedSessionController extends Controller
         // ✅ Store password in session for later use during decryption
         $request->session()->put('password', $request->input('password'));
 
-        return redirect()->intended('/encrypt');
+        return redirect()->intended('/dashboard');
     }
 
     /**
