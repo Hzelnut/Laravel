@@ -64,6 +64,8 @@ Route::middleware('auth')->group(function () {
 })->name('history.reset');
 
 
+
+
     // Secure encrypted file download
     Route::get('/download/encrypted/{filename}', function ($filename) {
         $filename = basename($filename);

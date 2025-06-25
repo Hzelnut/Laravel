@@ -23,6 +23,11 @@ class FileController extends Controller
         return view('decrypt');
     }
 
+    public function showRSAEncryptForm() { return view('rsa_encrypt'); }
+    public function showRSADecryptForm() { return view('rsa_decrypt'); }
+    public function showHybridEncryptForm() { return view('hybrid_encrypt'); }
+    public function showHybridDecryptForm() { return view('hybrid_decrypt'); }
+
     public function encryptAES(Request $request)
     {
         $request->validate([
@@ -32,6 +37,13 @@ class FileController extends Controller
         ]);
 
         $file = $request->file('file');
+        $excludedExtensions = ['jpg', 'jpeg', 'png', 'exe', 'dll', 'bat'];
+        $extension = $request->file('file')->getClientOriginalExtension();
+
+        if (in_array(strtolower($extension), $excludedExtensions)) {
+            return back()->withErrors(['file' => 'This file type is not allowed for encryption.']);
+        }
+
 
         $originalName = $request->file('file')->getClientOriginalName();
 
@@ -61,12 +73,17 @@ class FileController extends Controller
 
         $end = microtime(true);
 
+        $memoryUsed = memory_get_peak_usage(true);
+
+
         EncryptionLog::create([
             'user_id' => Auth::id(),
             'file_name' => $filename,
             'algorithm' => 'AES',
             'file_size' => strlen($data),
             'duration' => round($end - $start, 3),
+            'memory_used' => $memoryUsed,
+
         ]);
 
         session()->flash('download_file', $filename);
@@ -117,6 +134,9 @@ class FileController extends Controller
         }
         file_put_contents("$decryptedPath/$outputName", $decrypted);
 
+        $memoryUsed = memory_get_peak_usage(true);
+
+
         // ✅ Log the decryption
         \App\Models\EncryptionLog::create([
             'user_id'   => auth()->id(),
@@ -125,6 +145,8 @@ class FileController extends Controller
             'file_size' => $file->getSize(),
             'duration'  => round(microtime(true) - $start, 5),
             'type'      => 'DECRYPT',
+            'memory_used' => $memoryUsed,
+
         ]);
 
         // ✅ SweetAlert download
@@ -139,7 +161,6 @@ class FileController extends Controller
     {
         $request->validate([
             'file' => 'required|file',
-            'filename' => 'nullable|string',
             'password' => 'required|string|min:4',
         ]);
 
@@ -150,12 +171,12 @@ class FileController extends Controller
             return back()->withErrors(['file' => 'This file is already encrypted.']);
         }
 
-        $filename = ($request->input('filename') ?: pathinfo($originalName, PATHINFO_FILENAME)) . '.enc';
+        $filename = pathinfo($originalName, PATHINFO_FILENAME) . '.enc';
         $password = $request->input('password');
         $data = file_get_contents($file->getRealPath());
 
         if (strlen($data) > 190) {
-            return back()->withErrors(['file' => 'RSA can only encrypt small files. Use Hybrid for large files.']);
+            return back()->withErrors(['file' => 'RSA can only encrypt small files. Use Hybrid for larger files.']);
         }
 
         $start = microtime(true);
@@ -165,12 +186,7 @@ class FileController extends Controller
             "private_key_bits" => 2048,
         ];
         $res = openssl_pkey_new($keyConfig);
-
-        openssl_pkey_export($res, $privateKeyPEM, $password, [
-            'encrypt_key' => true,
-            'cipher' => 'aes-256-cbc'
-        ]);
-
+        openssl_pkey_export($res, $privateKeyPEM, $password);
         $publicKeyPEM = openssl_pkey_get_details($res)['key'];
 
         if (!openssl_public_encrypt($data, $encryptedData, $publicKeyPEM, OPENSSL_PKCS1_OAEP_PADDING)) {
@@ -188,19 +204,24 @@ class FileController extends Controller
         file_put_contents("$encPath/$filename", $finalPayload);
         file_put_contents("$keyPath/" . pathinfo($filename, PATHINFO_FILENAME) . "_private.pem", $privateKeyPEM);
 
+        $end = microtime(true);
+        $memoryUsed = memory_get_peak_usage(true);
+
         EncryptionLog::create([
             'user_id' => Auth::id(),
             'file_name' => $filename,
             'algorithm' => 'RSA',
             'file_size' => strlen($data),
-            'duration' => round(microtime(true) - $start, 5),
+            'duration' => round($end - $start, 5),
             'type' => 'ENCRYPT',
+            'memory_used' => $memoryUsed,
         ]);
 
         session()->flash('download_file', $filename);
         session()->flash('success', 'RSA encryption successful!');
         return redirect()->back();
     }
+
 
     public function decryptRSA(Request $request)
     {
@@ -253,6 +274,9 @@ class FileController extends Controller
         if (!file_exists($decryptedPath)) mkdir($decryptedPath, 0777, true);
         file_put_contents("$decryptedPath/$outputName", $decrypted);
 
+
+        $memoryUsed = memory_get_peak_usage(true);
+
         // ✅ Log decryption
         \App\Models\EncryptionLog::create([
             'user_id' => auth()->id(),
@@ -261,6 +285,8 @@ class FileController extends Controller
             'file_size' => $encFile->getSize(),
             'duration' => round(microtime(true) - $start, 5),
             'type' => 'DECRYPT',
+            'memory_used' => $memoryUsed,
+
         ]);
 
         // ✅ Success flash & download link
@@ -280,6 +306,13 @@ class FileController extends Controller
         ]);
 
         $file = $request->file('file');
+        $excludedExtensions = ['jpg', 'jpeg', 'png', 'exe', 'dll', 'bat'];
+        $extension = $request->file('file')->getClientOriginalExtension();
+
+        if (in_array(strtolower($extension), $excludedExtensions)) {
+            return back()->withErrors(['file' => 'This file type is not allowed for encryption.']);
+        }
+
         $originalName = $file->getClientOriginalName();
 
         if (str_ends_with($originalName, '.enc')) {
@@ -321,15 +354,20 @@ class FileController extends Controller
         if (!file_exists($encPath)) mkdir($encPath, 0777, true);
         file_put_contents("$encPath/$filename", $hybridData);
 
+
+        $memoryUsed = memory_get_peak_usage(true);
+
         // Log encryption
         \App\Models\EncryptionLog::create([
-            'user_id' => Auth::id(),
+            'user_id' => auth()->id(),
             'file_name' => $filename,
             'algorithm' => 'HYBRID',
             'file_size' => strlen($data),
             'duration' => round(microtime(true) - $start, 5),
             'type' => 'ENCRYPT',
             'recipient_id' => $recipient->id,
+            'memory_used' => $memoryUsed,
+
         ]);
 
         session()->flash('download_file', $filename);
@@ -386,6 +424,9 @@ class FileController extends Controller
         if (!file_exists($path)) mkdir($path, 0777, true);
         file_put_contents("$path/$outputName", $decrypted);
 
+
+        $memoryUsed = memory_get_peak_usage(true);
+
         EncryptionLog::create([
             'user_id' => auth()->id(),
             'file_name' => $request->file('file')->getClientOriginalName(),
@@ -393,6 +434,8 @@ class FileController extends Controller
             'file_size' => $request->file('file')->getSize(),
             'duration' => round(microtime(true) - $start, 5),
             'type' => 'DECRYPT',
+            'memory_used' => $memoryUsed,
+
         ]);
 
         session()->flash('success', 'Hybrid decryption successful!');
@@ -400,11 +443,6 @@ class FileController extends Controller
         session()->flash('download_name', $outputName);
         return redirect()->route('decrypt.form');
     }
-
-    public function showRSAEncryptForm() { return view('rsa_encrypt'); }
-    public function showRSADecryptForm() { return view('rsa_decrypt'); }
-    public function showHybridEncryptForm() { return view('hybrid_encrypt'); }
-    public function showHybridDecryptForm() { return view('hybrid_decrypt'); }
 
     public function showHistory()
     {
