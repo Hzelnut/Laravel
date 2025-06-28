@@ -19,6 +19,8 @@ return new class extends Migration
             $table->bigInteger('file_size')->nullable();
             $table->float('duration')->nullable(); // time in seconds
             $table->timestamps();
+            $table->float('duration')->nullable();
+
         });
     }
 

@@ -14,10 +14,11 @@ use App\Models\User;
 class FileController extends Controller
 {
     public function showEncryptForm()
-    {
-        $users = \App\Models\User::where('id', '!=', auth()->id())->get(); // exclude self
-        return view('profile.encrypt_all', compact('users'));
-    }
+{
+    $recipients = \App\Models\User::where('id', '!=', auth()->id())->get();
+    return view('profile.encrypt_all', compact('recipients'));
+}
+
     public function showDecryptForm()
     {
         return view('decrypt');
@@ -29,351 +30,400 @@ class FileController extends Controller
     public function showHybridDecryptForm() { return view('hybrid_decrypt'); }
 
     public function encryptAES(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|file',
-            'password' => 'required|string|min:4',
-            'filename' => 'required|string'
-        ]);
+{
+    $start = microtime(true); // Start timer immediately
 
-        $file = $request->file('file');
-        $excludedExtensions = ['jpg', 'jpeg', 'png', 'exe', 'dll', 'bat'];
-        $extension = $request->file('file')->getClientOriginalExtension();
+    // ✅ Validate input
+    $request->validate([
+        'file' => 'required|file',
+        'password' => 'required|string|min:4',
+        'filename' => 'required|string'
+    ]);
 
-        if (in_array(strtolower($extension), $excludedExtensions)) {
-            return back()->withErrors(['file' => 'This file type is not allowed for encryption.']);
-        }
+    $file = $request->file('file');
+    $excludedExtensions = ['jpg', 'jpeg', 'png', 'exe', 'dll', 'bat'];
+    $extension = strtolower($file->getClientOriginalExtension());
 
-
-        $originalName = $request->file('file')->getClientOriginalName();
-
-        if (str_ends_with($originalName, '.enc')) {
-        return back()->withErrors(['file' => 'This file is already encrypted. Please upload a different file.']);
-        }
-
-
-        $password = $request->input('password');
-        $filename = $request->input('filename') . '.enc';
-        $data = file_get_contents($file->getRealPath());
-
-        $start = microtime(true);
-
-        $salt = random_bytes(16);
-        $key = hash_pbkdf2("sha256", $password, $salt, 100000, 32, true);
-        $iv = random_bytes(16);
-        $cipher = openssl_encrypt($data, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
-        $hmac = hash_hmac('sha256', $salt . $iv . $cipher, $key, true);
-        $encrypted = 'AES' . $salt . $iv . $cipher . $hmac;
-
-        $path = storage_path("app/encrypted");
-        if (!file_exists($path)) {
-            mkdir($path, 0777, true);
-        }
-        file_put_contents("$path/$filename", $encrypted);
-
-        $end = microtime(true);
-
-        $memoryUsed = memory_get_peak_usage(true);
-
-
-        EncryptionLog::create([
-            'user_id' => Auth::id(),
-            'file_name' => $filename,
-            'algorithm' => 'AES',
-            'file_size' => strlen($data),
-            'duration' => round($end - $start, 3),
-            'memory_used' => $memoryUsed,
-
-        ]);
-
-        session()->flash('download_file', $filename);
-        session()->flash('original_name', $filename);
-        session()->flash('success', 'AES encryption successful!');
-        return redirect()->back();
+    // ❌ Block excluded file types
+    if (in_array($extension, $excludedExtensions)) {
+        return back()->withErrors(['file' => 'This file type is not allowed for encryption.']);
     }
+
+    $originalName = $file->getClientOriginalName();
+    if (str_ends_with($originalName, '.enc')) {
+        return back()->withErrors(['file' => 'This file is already encrypted. Please upload a different file.']);
+    }
+
+    $password = $request->input('password');
+    $filename = $request->input('filename') . '.enc';
+    $data = file_get_contents($file->getRealPath());
+
+    // ✅ Generate salt, key, iv
+    $salt = random_bytes(16);
+    $key = hash_pbkdf2("sha256", $password, $salt, 100000, 32, true);
+    $iv = random_bytes(12); // GCM recommended length
+    $tag = '';
+
+    // 🔒 Perform encryption
+    $cipher = openssl_encrypt(
+        $data,
+        'aes-256-gcm',
+        $key,
+        OPENSSL_RAW_DATA,
+        $iv,
+        $tag
+    );
+
+    if ($cipher === false) {
+        return back()->withErrors(['file' => 'Encryption failed.']);
+    }
+
+    // ✅ Build encrypted file format
+    $encrypted = 'AES' . $salt . $iv . $tag . $cipher;
+
+    // 💾 Save file
+    $path = storage_path("app/encrypted");
+    if (!file_exists($path)) {
+        mkdir($path, 0777, true);
+    }
+    file_put_contents("$path/$filename", $encrypted);
+
+    // ⏱️ End timer and log
+    $end = microtime(true);
+    $duration = round($end - $start, 3);
+    $memoryUsed = memory_get_peak_usage(true);
+
+    \App\Models\EncryptionLog::create([
+        'user_id' => Auth::id(),
+        'file_name' => $filename,
+        'algorithm' => 'AES',
+        'file_size' => strlen($data),
+        'duration' => $duration,
+        'memory_used' => $memoryUsed,
+    ]);
+
+    // ✅ Flash session for download
+    session()->flash('download_file', $filename);
+    session()->flash('original_name', $filename);
+
+    // ✅ Return redirect as response
+    return view('encrypt_success', [
+        'filename' => $filename
+    ]);
+}
+
+
 
     public function decryptAES(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|file',
-            'password' => 'required|string|min:4',
-        ]);
+{
+    $request->validate([
+        'file' => 'required|file',
+        'password' => 'required|string|min:4',
+    ]);
 
-        $start = microtime(true); // Start timing
+    $start = microtime(true);
+    $file = $request->file('file');
+    $password = $request->input('password');
+    $data = file_get_contents($file->getRealPath());
 
-        $file = $request->file('file');
-        $password = $request->input('password');
-        $data = file_get_contents($file->getRealPath());
-
-        if (substr($data, 0, 3) !== 'AES') {
-            return back()->withErrors(['file' => 'Invalid file format.']);
-        }
-
-        $salt = substr($data, 3, 16);
-        $iv = substr($data, 19, 16);
-        $hmac = substr($data, -32);
-        $cipher = substr($data, 35, -32);
-
-        $key = hash_pbkdf2("sha256", $password, $salt, 100000, 32, true);
-        $calculatedHmac = hash_hmac('sha256', $salt . $iv . $cipher, $key, true);
-
-        if (!hash_equals($hmac, $calculatedHmac)) {
-            return back()->withErrors(['password' => 'Decryption failed: wrong password or tampered file.']);
-        }
-
-        $decrypted = openssl_decrypt($cipher, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
-
-        if ($decrypted === false) {
-            return back()->withErrors(['file' => 'Decryption failed due to an internal error.']);
-        }
-
-        $outputName = 'decrypted_aes_' . time() . '.txt';
-        $decryptedPath = storage_path('app/decrypted');
-        if (!file_exists($decryptedPath)) {
-            mkdir($decryptedPath, 0777, true);
-        }
-        file_put_contents("$decryptedPath/$outputName", $decrypted);
-
-        $memoryUsed = memory_get_peak_usage(true);
-
-
-        // ✅ Log the decryption
-        \App\Models\EncryptionLog::create([
-            'user_id'   => auth()->id(),
-            'file_name' => $file->getClientOriginalName(),
-            'algorithm' => 'AES',
-            'file_size' => $file->getSize(),
-            'duration'  => round(microtime(true) - $start, 5),
-            'type'      => 'DECRYPT',
-            'memory_used' => $memoryUsed,
-
-        ]);
-
-        // ✅ SweetAlert download
-        session()->flash('success', 'AES decryption successful!');
-        session()->flash('download_url', route('download.decrypted', ['filename' => $outputName]));
-        session()->flash('download_name', $outputName);
-
-        return redirect()->route('decrypt.form');
+    if (substr($data, 0, 3) !== 'AES') {
+        return back()->withErrors(['file' => 'Invalid file format.']);
     }
+
+    $salt = substr($data, 3, 16);
+    $iv = substr($data, 19, 12);
+    $tag = substr($data, 31, 16);
+    $cipher = substr($data, 47);
+
+    $key = hash_pbkdf2("sha256", $password, $salt, 100000, 32, true);
+
+    $decrypted = openssl_decrypt(
+        $cipher,
+        'aes-256-gcm',
+        $key,
+        OPENSSL_RAW_DATA,
+        $iv,
+        $tag
+    );
+
+    if ($decrypted === false) {
+        return back()->withErrors(['password' => 'Decryption failed: wrong password or tampered file.']);
+    }
+
+    $outputName = 'decrypted_aes_' . time() . '.txt';
+    $decryptedPath = storage_path('app/decrypted');
+    if (!file_exists($decryptedPath)) {
+        mkdir($decryptedPath, 0777, true);
+    }
+    file_put_contents("$decryptedPath/$outputName", $decrypted);
+
+    $memoryUsed = memory_get_peak_usage(true);
+
+    \App\Models\EncryptionLog::create([
+        'user_id' => auth()->id(),
+        'file_name' => $file->getClientOriginalName(),
+        'algorithm' => 'AES',
+        'file_size' => $file->getSize(),
+        'duration' => round(microtime(true) - $start, 5),
+        'type' => 'DECRYPT',
+        'memory_used' => $memoryUsed,
+    ]);
+
+    session()->flash('success', 'AES decryption successful!');
+    session()->flash('download_url', route('download.decrypted', ['filename' => $outputName]));
+    session()->flash('download_name', $outputName);
+
+    return redirect()->route('decrypt.form');
+
+
+}
+
 
     public function encryptRSA(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|file',
-            'password' => 'required|string|min:4',
-        ]);
+{
+    $start = microtime(true); // ⏱️ Start timer immediately
 
-        $file = $request->file('file');
-        $originalName = $file->getClientOriginalName();
+    // ✅ Validate inputs
+    $request->validate([
+        'file' => 'required|file',
+        'filename' => 'required|string',
+        'password' => 'required|string|min:4',
+        'recipient_id' => 'required|exists:users,id',
+    ]);
 
-        if (str_ends_with($originalName, '.enc')) {
-            return back()->withErrors(['file' => 'This file is already encrypted.']);
-        }
+    $file = $request->file('file');
+    $originalName = $file->getClientOriginalName();
 
-        $filename = pathinfo($originalName, PATHINFO_FILENAME) . '.enc';
-        $password = $request->input('password');
-        $data = file_get_contents($file->getRealPath());
-
-        if (strlen($data) > 190) {
-            return back()->withErrors(['file' => 'RSA can only encrypt small files. Use Hybrid for larger files.']);
-        }
-
-        $start = microtime(true);
-
-        $keyConfig = [
-            "private_key_type" => OPENSSL_KEYTYPE_RSA,
-            "private_key_bits" => 2048,
-        ];
-        $res = openssl_pkey_new($keyConfig);
-        openssl_pkey_export($res, $privateKeyPEM, $password);
-        $publicKeyPEM = openssl_pkey_get_details($res)['key'];
-
-        if (!openssl_public_encrypt($data, $encryptedData, $publicKeyPEM, OPENSSL_PKCS1_OAEP_PADDING)) {
-            return back()->withErrors(['file' => 'RSA encryption failed.']);
-        }
-
-        $hash = hash('sha256', $password);
-        $finalPayload = 'RSA' . $encryptedData . $hash;
-
-        $encPath = storage_path("app/encrypted");
-        $keyPath = storage_path("app/keys");
-        if (!file_exists($encPath)) mkdir($encPath, 0777, true);
-        if (!file_exists($keyPath)) mkdir($keyPath, 0777, true);
-
-        file_put_contents("$encPath/$filename", $finalPayload);
-        file_put_contents("$keyPath/" . pathinfo($filename, PATHINFO_FILENAME) . "_private.pem", $privateKeyPEM);
-
-        $end = microtime(true);
-        $memoryUsed = memory_get_peak_usage(true);
-
-        EncryptionLog::create([
-            'user_id' => Auth::id(),
-            'file_name' => $filename,
-            'algorithm' => 'RSA',
-            'file_size' => strlen($data),
-            'duration' => round($end - $start, 5),
-            'type' => 'ENCRYPT',
-            'memory_used' => $memoryUsed,
-        ]);
-
-        session()->flash('download_file', $filename);
-        session()->flash('success', 'RSA encryption successful!');
-        return redirect()->back();
+    // ❌ Prevent re-encryption
+    if (str_ends_with($originalName, '.enc')) {
+        return back()->withErrors(['file' => 'This file is already encrypted.']);
     }
+
+    $data = file_get_contents($file->getRealPath());
+
+    // ⚠️ RSA size limitation check (2048-bit key typical limit ~190 bytes)
+    if (strlen($data) > 190) {
+        return back()->withErrors(['file' => 'RSA can only encrypt small files (≤190 bytes).']);
+    }
+
+    $filename = $request->input('filename') . '.enc';
+    $password = $request->input('password');
+    $recipientId = $request->input('recipient_id');
+
+    // 🔑 Get recipient public key from DB
+    $recipient = \App\Models\User::findOrFail($recipientId);
+    $recipientPublicKey = $recipient->public_key;
+
+    if (!$recipientPublicKey) {
+        return back()->withErrors(['recipient_id' => 'Recipient public key not found.']);
+    }
+
+    // 🔒 Perform RSA encryption
+    if (!openssl_public_encrypt($data, $encryptedData, $recipientPublicKey, OPENSSL_PKCS1_OAEP_PADDING)) {
+        return back()->withErrors(['file' => 'RSA encryption failed.']);
+    }
+
+    // 🧐 Stress test (optional loop)
+    for ($i = 0; $i < 20; $i++) {
+        openssl_public_encrypt($data, $temp, $recipientPublicKey, OPENSSL_PKCS1_OAEP_PADDING);
+    }
+
+    // 🔑 Append SHA-256 hash of password for integrity
+    $hash = hash('sha256', $password);
+    $payload = 'RSA' . $encryptedData . $hash;
+
+    // 💾 Save encrypted file
+    $encPath = storage_path('app/encrypted');
+    if (!file_exists($encPath)) {
+        mkdir($encPath, 0777, true);
+    }
+    file_put_contents("$encPath/$filename", $payload);
+
+    // 📝 Log encryption metadata
+    \App\Models\EncryptionLog::create([
+        'user_id' => auth()->id(),
+        'file_name' => $filename,
+        'algorithm' => 'RSA',
+        'file_size' => strlen($data),
+        'duration' => round(microtime(true) - $start, 5),
+        'type' => 'ENCRYPT',
+        'recipient_id' => $recipient->id,
+        'memory_used' => memory_get_peak_usage(true),
+    ]);
+
+    // ✅ Flash session for download success
+    session()->flash('download_file', $filename);
+    session()->flash('success', 'RSA encryption successful!');
+
+    // 🔙 Redirect back
+    return redirect()->back();
+}
+
+
 
 
     public function decryptRSA(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|file',
-            'private_key' => 'required|file',
-            'password' => 'required|string|min:4',
-        ]);
+{
+    $request->validate([
+        'file' => 'required|file',
+        'private_key' => 'required|file',
+        'password' => 'required|string|min:4',
+    ]);
 
-        $start = microtime(true);
+    $start = microtime(true);
 
-        $encFile = $request->file('file');
-        $keyFile = $request->file('private_key');
-        $password = $request->input('password');
+    $encFile = $request->file('file');
+    $privateKeyFile = $request->file('private_key');
+    $password = $request->input('password');
 
-        $encData = file_get_contents($encFile->getRealPath());
-        $privateKeyData = file_get_contents($keyFile->getRealPath());
+    $encData = file_get_contents($encFile->getRealPath());
+    $privateKeyData = file_get_contents($privateKeyFile->getRealPath());
 
-        // ✅ Validate file header
-        if (substr($encData, 0, 3) !== 'RSA') {
-            return back()->withErrors(['file' => 'Invalid file format.']);
-        }
-
-        // ✅ Extract data
-        $payload = substr($encData, 3);
-        $cipher = substr($payload, 0, -64);
-        $storedHash = substr($payload, -64);
-        $inputHash = hash('sha256', $password);
-
-        // ✅ Compare hashes to verify password
-        if (!hash_equals($storedHash, $inputHash)) {
-            return back()->withErrors(['password' => 'Incorrect password.']);
-        }
-
-        // ✅ Load private key (supports encrypted PEM)
-        $privateKey = openssl_pkey_get_private($privateKeyData, $password);
-        if (!$privateKey) {
-            return back()->withErrors(['private_key' => 'Failed to load private key. Make sure the password is correct.']);
-        }
-
-        // ✅ Decrypt RSA
-        if (!openssl_private_decrypt($cipher, $decrypted, $privateKey, OPENSSL_PKCS1_OAEP_PADDING)) {
-            $error = openssl_error_string();
-            return back()->withErrors(['file' => "RSA decryption failed. $error"]);
-        }
-
-        // ✅ Save decrypted content
-        $outputName = 'decrypted_rsa_' . time() . '.txt';
-        $decryptedPath = storage_path('app/decrypted');
-        if (!file_exists($decryptedPath)) mkdir($decryptedPath, 0777, true);
-        file_put_contents("$decryptedPath/$outputName", $decrypted);
-
-
-        $memoryUsed = memory_get_peak_usage(true);
-
-        // ✅ Log decryption
-        \App\Models\EncryptionLog::create([
-            'user_id' => auth()->id(),
-            'file_name' => $encFile->getClientOriginalName(),
-            'algorithm' => 'RSA',
-            'file_size' => $encFile->getSize(),
-            'duration' => round(microtime(true) - $start, 5),
-            'type' => 'DECRYPT',
-            'memory_used' => $memoryUsed,
-
-        ]);
-
-        // ✅ Success flash & download link
-        session()->flash('success', 'RSA decryption successful!');
-        session()->flash('download_url', route('download.decrypted', ['filename' => $outputName]));
-        session()->flash('download_name', $outputName);
-        return redirect()->route('decrypt.form');
+    if (substr($encData, 0, 3) !== 'RSA') {
+        return back()->withErrors(['file' => 'Invalid RSA file format.']);
     }
+
+    $payload = substr($encData, 3);
+    $cipher = substr($payload, 0, -64);
+    $storedHash = substr($payload, -64);
+    $inputHash = hash('sha256', $password);
+
+    if (!hash_equals($storedHash, $inputHash)) {
+        return back()->withErrors(['password' => 'Incorrect password.']);
+    }
+
+    // Load private key (no passphrase needed here)
+    $privateKey = openssl_pkey_get_private($privateKeyData);
+    if (!$privateKey) {
+        return back()->withErrors(['private_key' => 'Failed to load private key.']);
+    }
+
+    // Decrypt
+    if (!openssl_private_decrypt($cipher, $decrypted, $privateKey, OPENSSL_PKCS1_OAEP_PADDING)) {
+        return back()->withErrors(['file' => 'RSA decryption failed.']);
+    }
+    for ($i = 0; $i < 20; $i++) {
+    openssl_private_decrypt($cipher, $temp, $privateKey, OPENSSL_PKCS1_OAEP_PADDING);
+    }
+
+    // Save decrypted file
+    $outputName = 'decrypted_rsa_' . time() . '.txt';
+    $decryptedPath = storage_path('app/decrypted');
+    if (!file_exists($decryptedPath)) mkdir($decryptedPath, 0777, true);
+    file_put_contents("$decryptedPath/$outputName", $decrypted);
+
+    // Log
+    \App\Models\EncryptionLog::create([
+        'user_id' => auth()->id(),
+        'file_name' => $encFile->getClientOriginalName(),
+        'algorithm' => 'RSA',
+        'file_size' => $encFile->getSize(),
+        'duration' => round(microtime(true) - $start, 5),
+        'type' => 'DECRYPT',
+        'memory_used' => memory_get_peak_usage(true),
+    ]);
+
+    session()->flash('success', 'RSA decryption successful!');
+    session()->flash('download_url', route('download.decrypted', ['filename' => $outputName]));
+    session()->flash('download_name', $outputName);
+    return view('decrypt_success', [
+    'download_url' => route('download.decrypted', ['filename' => $outputName]),
+    'download_name' => $outputName
+]);
+}
+
+
 
     public function encryptHybrid(Request $request)
-    {
-        $request->validate([
-            'file' => 'required|file',
-            'filename' => 'required|string',
-            'password' => 'required|string|min:4',
-            'recipient_id' => 'required|exists:users,id',
-        ]);
+{
+    $start = microtime(true); // ⏱️ Start timer early
 
-        $file = $request->file('file');
-        $excludedExtensions = ['jpg', 'jpeg', 'png', 'exe', 'dll', 'bat'];
-        $extension = $request->file('file')->getClientOriginalExtension();
+    // ✅ Validate inputs
+    $request->validate([
+        'file' => 'required|file',
+        'filename' => 'required|string',
+        'password' => 'required|string|min:4',
+        'recipient_id' => 'required|exists:users,id',
+    ]);
 
-        if (in_array(strtolower($extension), $excludedExtensions)) {
-            return back()->withErrors(['file' => 'This file type is not allowed for encryption.']);
-        }
+    $file = $request->file('file');
+    $extension = $file->getClientOriginalExtension();
+    $excludedExtensions = ['jpg', 'jpeg', 'png', 'exe', 'dll', 'bat'];
 
-        $originalName = $file->getClientOriginalName();
-
-        if (str_ends_with($originalName, '.enc')) {
-            return back()->withErrors(['file' => 'This file is already encrypted.']);
-        }
-
-        $filename = $request->input('filename') . '.enc';
-        $password = $request->input('password');
-        $recipientId = $request->input('recipient_id');
-        $data = file_get_contents($file->getRealPath());
-
-        $start = microtime(true);
-
-        // Generate AES key and IV
-        $aesKey = random_bytes(32); // AES-256
-        $iv = random_bytes(16);     // CBC IV
-
-        // Encrypt the file content with AES
-        $cipher = openssl_encrypt($data, 'aes-256-cbc', $aesKey, OPENSSL_RAW_DATA, $iv);
-
-        // Fetch recipient public key
-        $recipient = \App\Models\User::findOrFail($recipientId);
-        $recipientPublicKey = $recipient->public_key;
-
-        if (!$recipientPublicKey) {
-            return back()->withErrors(['recipient_id' => 'Recipient public key not found.']);
-        }
-
-        // Encrypt the AES key with recipient's public key
-        if (!openssl_public_encrypt($aesKey, $encryptedAESKey, $recipientPublicKey, OPENSSL_PKCS1_OAEP_PADDING)) {
-            return back()->withErrors(['file' => 'Failed to encrypt AES key with public key.']);
-        }
-
-        // Final payload format
-        $hash = hash('sha256', $password); // Used for decryption check
-        $hybridData = 'HYB' . pack('n', strlen($encryptedAESKey)) . $encryptedAESKey . $iv . $cipher . $hash;
-
-        $encPath = storage_path("app/encrypted");
-        if (!file_exists($encPath)) mkdir($encPath, 0777, true);
-        file_put_contents("$encPath/$filename", $hybridData);
-
-
-        $memoryUsed = memory_get_peak_usage(true);
-
-        // Log encryption
-        \App\Models\EncryptionLog::create([
-            'user_id' => auth()->id(),
-            'file_name' => $filename,
-            'algorithm' => 'HYBRID',
-            'file_size' => strlen($data),
-            'duration' => round(microtime(true) - $start, 5),
-            'type' => 'ENCRYPT',
-            'recipient_id' => $recipient->id,
-            'memory_used' => $memoryUsed,
-
-        ]);
-
-        session()->flash('download_file', $filename);
-        session()->flash('success', 'Hybrid encryption successful!');
-        return redirect()->back();
+    // ❌ Disallow excluded file types
+    if (in_array(strtolower($extension), $excludedExtensions)) {
+        return back()->withErrors(['file' => 'This file type is not allowed for encryption.']);
     }
+
+    $originalName = $file->getClientOriginalName();
+
+    // ❌ Prevent re-encryption
+    if (str_ends_with($originalName, '.enc')) {
+        return back()->withErrors(['file' => 'This file is already encrypted.']);
+    }
+
+    // 📄 Gather inputs
+    $filename = $request->input('filename') . '.enc';
+    $password = $request->input('password');
+    $recipientId = $request->input('recipient_id');
+    $data = file_get_contents($file->getRealPath());
+
+    // 🔑 Generate AES key and IV
+    $aesKey = random_bytes(32); // AES-256 key
+    $iv = random_bytes(16);     // CBC mode IV
+
+    // 🔒 Encrypt file data with AES
+    $cipher = openssl_encrypt($data, 'aes-256-cbc', $aesKey, OPENSSL_RAW_DATA, $iv);
+
+    // 🔑 Fetch recipient public key
+    $recipient = \App\Models\User::findOrFail($recipientId);
+    $recipientPublicKey = $recipient->public_key;
+
+    if (!$recipientPublicKey) {
+        return back()->withErrors(['recipient_id' => 'Recipient public key not found.']);
+    }
+
+    // 🔐 Encrypt AES key with recipient public key
+    if (!openssl_public_encrypt($aesKey, $encryptedAESKey, $recipientPublicKey, OPENSSL_PKCS1_OAEP_PADDING)) {
+        return back()->withErrors(['file' => 'Failed to encrypt AES key with public key.']);
+    }
+
+    // 📝 Append SHA-256 hash of password for integrity verification
+    $hash = hash('sha256', $password);
+
+    // 📦 Build hybrid payload
+    $hybridData = 'HYB'
+                . pack('n', strlen($encryptedAESKey))
+                . $encryptedAESKey
+                . $iv
+                . $cipher
+                . $hash;
+
+    // 💾 Save encrypted file
+    $encPath = storage_path('app/encrypted');
+    if (!file_exists($encPath)) {
+        mkdir($encPath, 0777, true);
+    }
+    file_put_contents("$encPath/$filename", $hybridData);
+
+    // 📊 Log encryption activity
+    \App\Models\EncryptionLog::create([
+        'user_id' => auth()->id(),
+        'file_name' => $filename,
+        'algorithm' => 'HYBRID',
+        'file_size' => strlen($data),
+        'duration' => round(microtime(true) - $start, 5),
+        'type' => 'ENCRYPT',
+        'recipient_id' => $recipient->id,
+        'memory_used' => memory_get_peak_usage(true),
+    ]);
+
+    // ✅ Flash session for UI success
+    session()->flash('download_file', $filename);
+    session()->flash('success', 'Hybrid encryption successful!');
+    return redirect()->back();
+}
+
 
     public function decryptHybrid(Request $request)
     {
@@ -441,23 +491,26 @@ class FileController extends Controller
         session()->flash('success', 'Hybrid decryption successful!');
         session()->flash('download_url', route('download.decrypted', ['filename' => $outputName]));
         session()->flash('download_name', $outputName);
-        return redirect()->route('decrypt.form');
+        return view('decrypt_success', [
+        'download_url' => route('download.decrypted', ['filename' => $outputName]),
+        'download_name' => $outputName
+            ]);
     }
 
     public function showHistory()
-    {
-        $userId = Auth::id();
+{
+    $userId = Auth::id();
 
-        $logs = \App\Models\EncryptionLog::where('user_id', $userId)
-            ->orWhere('recipient_id', $userId)
-            ->latest()
-            ->get();
+    $logs = \App\Models\EncryptionLog::where('user_id', $userId)
+        ->orWhere('recipient_id', $userId)
+        ->latest()
+        ->get();
 
-        $encryptionLogs = $logs->where('type', 'ENCRYPT')->values();
-        $decryptionLogs = $logs->where('type', 'DECRYPT')->values();
+    $encryptionLogs = $logs->where('type', 'ENCRYPT')->values();
+    $decryptionLogs = $logs->where('type', 'DECRYPT')->values();
 
-        return view('history', compact('encryptionLogs', 'decryptionLogs'));
-    }
+    return view('history', compact('encryptionLogs', 'decryptionLogs'));
+}
 
     public function receivedHistory()
     {
@@ -469,51 +522,40 @@ class FileController extends Controller
         return view('received_history', compact('logs'));
     }
 
-    public function autoEncrypt(Request $request)
+public function autoEncrypt(Request $request)
 {
-    $method = $request->input('method');
     $start = microtime(true); // Start timer
+
+    $algorithm = $request->input('algorithm');
     $response = null;
 
-    if ($method === 'AES') {
+    if ($algorithm == 'AES') {
         $response = $this->encryptAES($request);
-    } elseif ($method === 'RSA') {
+    } elseif ($algorithm == 'RSA') {
         $response = $this->encryptRSA($request);
-    } elseif ($method === 'HYBRID') {
+    } elseif ($algorithm == 'HYBRID') {
         $response = $this->encryptHybrid($request);
     } else {
-        return back()->withErrors(['method' => 'Invalid encryption method selected.']);
+        return back()->withErrors(['algorithm' => 'Invalid encryption method selected.']);
     }
-
-    // Log only if encryption worked
-    if ($response instanceof \Illuminate\Http\Response && $request->file('file')) {
-        \App\Models\EncryptionLog::create([
-            'user_id'   => auth()->id(),
-            'filename'  => $request->file('file')->getClientOriginalName(),
-            'algorithm' => strtoupper($method),
-            'size'      => $request->file('file')->getSize(),
-            'time'      => round(microtime(true) - $start, 5),
-            'created_at' => now(),
-        ]);
-    }
-
-    return $response;
 }
 
     public function autoDecrypt(Request $request)
-    {
-        $mode = $request->input('mode');
+{
+    $algorithm = $request->input('algorithm');
 
-        if ($mode === 'AES') {
-            return $this->decryptAES($request);
-        } elseif ($mode === 'RSA') {
-            return $this->decryptRSA($request);
-        } elseif ($mode === 'HYBRID') {
-            return $this->decryptHybrid($request);
-        }
-
-        return back()->withErrors(['mode' => 'Invalid decryption mode selected.']);
+    if ($algorithm == 'AES') {
+        return $this->decryptAES($request);
+    } elseif ($algorithm == 'RSA') {
+        return $this->decryptRSA($request);
+    } elseif ($algorithm == 'HYBRID') {
+        return $this->decryptHybrid($request);
+    } else {
+        return back()->withErrors(['algorithm' => 'Invalid decryption method selected.']);
     }
+}
+
+
 
     public function downloadPrivateKey($filename)
     {
@@ -521,4 +563,5 @@ class FileController extends Controller
         if (!file_exists($path)) abort(404);
         return response()->download($path);
     }
+
 }

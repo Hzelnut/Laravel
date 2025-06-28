@@ -5,9 +5,16 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\FileController;
 use App\Http\Controllers\KeyController;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Auth;
+use App\Models\EncryptionLog;
+
+Route::get('/check-id', function() {
+    return auth()->id();
+});
+
 
 Route::get('/', function () {
-    return view('welcome');
+    return view('landing');
 });
 
 Route::get('/dashboard', function () {
@@ -59,11 +66,15 @@ Route::middleware('auth')->group(function () {
     Route::get('/history/received', [FileController::class, 'receivedHistory'])->name('history.received');
 
     Route::post('/history/reset', function () {
-    \App\Models\EncryptionLog::where('user_id', Auth::id())->delete();
-    return redirect()->route('history')->with('success', 'History cleared.');
-})->name('history.reset');
+    EncryptionLog::where('user_id', Auth::id())->delete();
+
+    return redirect()->route('history')->with('success', 'Your history has been cleared.');
+    })->name('history.reset');
 
 
+Route::get('/decrypt-success', function () {
+    return view('decrypt_success');
+})->name('decrypt.success');
 
 
     // Secure encrypted file download
