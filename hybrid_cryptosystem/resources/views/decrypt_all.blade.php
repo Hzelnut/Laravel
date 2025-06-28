@@ -71,15 +71,19 @@ document.addEventListener('DOMContentLoaded', function() {
 @if (session('success') && session('download_url'))
 <script>
 Swal.fire({
-  title: 'Success',
-  text: '{{ session('success') }}',
+  title: 'Success!',
+  text: "{{ session('success') }}",
   icon: 'success',
   confirmButtonText: 'Download'
 }).then((result) => {
   if (result.isConfirmed) {
-    window.location.href = "{{ session('download_url') }}";
+    window.open("{{ session('download_url') }}", "_blank");
   }
 });
 </script>
 @endif
+
+@include('components.sweetalert-download')
+
+
 @endsection

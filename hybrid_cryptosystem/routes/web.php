@@ -52,15 +52,17 @@ Route::middleware('auth')->group(function () {
 
     // Secure decrypted file download
     Route::get('/download/decrypted/{filename}', function ($filename) {
-        $filename = basename($filename);
-        $path = storage_path("app/decrypted/{$filename}");
+    $filename = basename($filename);
+    $path = storage_path("app/decrypted/{$filename}");
 
-        if (!file_exists($path)) {
-            abort(404);
-        }
+    if (!file_exists($path)) {
+        abort(404);
+    }
 
-        return response()->download($path)->deleteFileAfterSend();
-    })->name('download.decrypted');
+    return response()->download($path, $filename);
+})->name('download.decrypted');
+
+
 
 
     Route::get('/history/received', [FileController::class, 'receivedHistory'])->name('history.received');

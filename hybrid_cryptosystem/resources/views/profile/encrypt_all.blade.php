@@ -73,4 +73,19 @@ document.addEventListener('DOMContentLoaded', function() {
   toggleRecipient(); // initial call on page load
 });
 </script>
+@if(session('success') && session('download_url'))
+<script>
+Swal.fire({
+    title: 'Success!',
+    text: "{{ session('success') }}",
+    icon: 'success',
+    confirmButtonText: 'Download'
+}).then((result) => {
+    if (result.isConfirmed) {
+        window.location.href = "{{ session('download_url') }}";
+    }
+});
+</script>
+@endif
+
 @endsection

@@ -1,19 +1,21 @@
 @extends('layouts.app')
 
 @section('content')
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<div class="container mx-auto px-4 py-8 text-center">
+  <h2 class="text-2xl font-bold text-cyan-400 mb-4">Decryption Complete</h2>
+  <p>Your file has been successfully decrypted.</p>
+</div>
+
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        Swal.fire({
-            title: 'Decryption Successful!',
-            text: 'Your file is ready to download.',
-            icon: 'success',
-            confirmButtonText: 'Download Now'
-        }).then((result) => {
-            if (result.isConfirmed) {
-            window.location.href = "{{ session('download_url') }}";
-            }
-        });
-    });
+Swal.fire({
+  title: 'Success!',
+  text: "Your file has been decrypted successfully.",
+  icon: 'success',
+  confirmButtonText: 'Download'
+}).then((result) => {
+  if (result.isConfirmed) {
+    window.open("{{ $download_url }}", "_blank");
+  }
+});
 </script>
 @endsection

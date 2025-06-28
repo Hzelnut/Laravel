@@ -107,9 +107,11 @@ class FileController extends Controller
     session()->flash('original_name', $filename);
 
     // ✅ Return redirect as response
-    return view('encrypt_success', [
-        'filename' => $filename
+    return redirect()->route('encrypt.form')->with([
+    'success' => 'AES encryption successful!',
+    'download_url' => route('download.encrypted', ['filename' => $filename]),
     ]);
+
 }
 
 
@@ -169,14 +171,12 @@ class FileController extends Controller
         'memory_used' => $memoryUsed,
     ]);
 
-    session()->flash('success', 'AES decryption successful!');
-    session()->flash('download_url', route('download.decrypted', ['filename' => $outputName]));
-    session()->flash('download_name', $outputName);
-
-    return redirect()->route('decrypt.form');
-
+    return view('decrypt_success', [
+    'download_url' => route('download.decrypted', ['filename' => $outputName]),
+    ]);
 
 }
+
 
 
     public function encryptRSA(Request $request)
@@ -256,7 +256,10 @@ class FileController extends Controller
     session()->flash('success', 'RSA encryption successful!');
 
     // 🔙 Redirect back
-    return redirect()->back();
+    return redirect()->route('encrypt.form')->with([
+    'success' => 'AES encryption successful!',
+    'download_url' => route('download.encrypted', ['filename' => $filename]),
+    ]);
 }
 
 
@@ -326,10 +329,11 @@ class FileController extends Controller
     session()->flash('success', 'RSA decryption successful!');
     session()->flash('download_url', route('download.decrypted', ['filename' => $outputName]));
     session()->flash('download_name', $outputName);
-    return view('decrypt_success', [
+    return redirect()->route('decrypt.form')->with([
+    'success' => 'AES decryption successful!',
     'download_url' => route('download.decrypted', ['filename' => $outputName]),
-    'download_name' => $outputName
-]);
+    ]);
+
 }
 
 
@@ -421,7 +425,10 @@ class FileController extends Controller
     // ✅ Flash session for UI success
     session()->flash('download_file', $filename);
     session()->flash('success', 'Hybrid encryption successful!');
-    return redirect()->back();
+    return redirect()->route('encrypt.form')->with([
+    'success' => 'AES encryption successful!',
+    'download_url' => route('download.encrypted', ['filename' => $filename]),
+    ]);
 }
 
 
@@ -491,10 +498,11 @@ class FileController extends Controller
         session()->flash('success', 'Hybrid decryption successful!');
         session()->flash('download_url', route('download.decrypted', ['filename' => $outputName]));
         session()->flash('download_name', $outputName);
-        return view('decrypt_success', [
+        return redirect()->route('decrypt.form')->with([
+        'success' => 'AES decryption successful!',
         'download_url' => route('download.decrypted', ['filename' => $outputName]),
-        'download_name' => $outputName
             ]);
+
     }
 
     public function showHistory()
@@ -521,7 +529,6 @@ class FileController extends Controller
 
         return view('received_history', compact('logs'));
     }
-
 public function autoEncrypt(Request $request)
 {
     $start = microtime(true); // Start timer
@@ -538,6 +545,8 @@ public function autoEncrypt(Request $request)
     } else {
         return back()->withErrors(['algorithm' => 'Invalid encryption method selected.']);
     }
+
+    return $response;
 }
 
     public function autoDecrypt(Request $request)
@@ -553,6 +562,7 @@ public function autoEncrypt(Request $request)
     } else {
         return back()->withErrors(['algorithm' => 'Invalid decryption method selected.']);
     }
+
 }
 
 
