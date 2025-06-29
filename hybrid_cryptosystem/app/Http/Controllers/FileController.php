@@ -171,9 +171,11 @@ class FileController extends Controller
         'memory_used' => $memoryUsed,
     ]);
 
-    return view('decrypt_success', [
-    'download_url' => route('download.decrypted', ['filename' => $outputName]),
-    ]);
+    session()->flash('success', 'AES decryption successful!');
+    session()->flash('download_url', route('download.decrypted', ['filename' => $outputName]));
+    session()->flash('download_name', $outputName);
+
+    return redirect()->route('decrypt.form');
 
 }
 
@@ -257,7 +259,7 @@ class FileController extends Controller
 
     // 🔙 Redirect back
     return redirect()->route('encrypt.form')->with([
-    'success' => 'AES encryption successful!',
+    'success' => 'RSA encryption successful!',
     'download_url' => route('download.encrypted', ['filename' => $filename]),
     ]);
 }
@@ -330,7 +332,7 @@ class FileController extends Controller
     session()->flash('download_url', route('download.decrypted', ['filename' => $outputName]));
     session()->flash('download_name', $outputName);
     return redirect()->route('decrypt.form')->with([
-    'success' => 'AES decryption successful!',
+    'success' => 'RSA decryption successful!',
     'download_url' => route('download.decrypted', ['filename' => $outputName]),
     ]);
 
@@ -426,7 +428,7 @@ class FileController extends Controller
     session()->flash('download_file', $filename);
     session()->flash('success', 'Hybrid encryption successful!');
     return redirect()->route('encrypt.form')->with([
-    'success' => 'AES encryption successful!',
+    'success' => 'Hybrid encryption successful!',
     'download_url' => route('download.encrypted', ['filename' => $filename]),
     ]);
 }
@@ -499,7 +501,7 @@ class FileController extends Controller
         session()->flash('download_url', route('download.decrypted', ['filename' => $outputName]));
         session()->flash('download_name', $outputName);
         return redirect()->route('decrypt.form')->with([
-        'success' => 'AES decryption successful!',
+        'success' => 'Hybrid decryption successful!',
         'download_url' => route('download.decrypted', ['filename' => $outputName]),
             ]);
 

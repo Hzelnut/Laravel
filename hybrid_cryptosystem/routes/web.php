@@ -59,7 +59,7 @@ Route::middleware('auth')->group(function () {
         abort(404);
     }
 
-    return response()->download($path, $filename);
+    return response()->download($path);
 })->name('download.decrypted');
 
 
@@ -68,10 +68,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/history/received', [FileController::class, 'receivedHistory'])->name('history.received');
 
     Route::post('/history/reset', function () {
-    EncryptionLog::where('user_id', Auth::id())->delete();
-
+    \App\Models\EncryptionLog::where('user_id', Auth::id())->delete();
+    \App\Models\EncryptionLog::where('recipient_id', Auth::id())->delete();
     return redirect()->route('history')->with('success', 'Your history has been cleared.');
-    })->name('history.reset');
+})->name('history.reset');
+
 
 
 Route::get('/decrypt-success', function () {

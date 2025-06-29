@@ -68,22 +68,26 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-@if (session('success') && session('download_url'))
-<script>
-Swal.fire({
-  title: 'Success!',
-  text: "{{ session('success') }}",
-  icon: 'success',
-  confirmButtonText: 'Download'
-}).then((result) => {
-  if (result.isConfirmed) {
-    window.open("{{ session('download_url') }}", "_blank");
-  }
-});
-</script>
+@if(session('success') && session('download_url') && session('download_name'))
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            Swal.fire({
+                title: 'Decryption Successful!',
+                text: '{{ session('success') }}',
+                icon: 'success',
+                confirmButtonText: 'Download Now'
+            }).then(() => {
+                const a = document.createElement('a');
+                a.href = "{{ session('download_url') }}";
+                a.setAttribute('download', '{{ session('download_name') }}');
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            });
+        });
+    </script>
 @endif
-
-@include('components.sweetalert-download')
 
 
 @endsection
